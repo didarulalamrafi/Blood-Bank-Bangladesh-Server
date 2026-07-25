@@ -5,13 +5,13 @@ const express = require("express");
 const app = express();
 app.use(cors());
 app.use(express.json());
-const port = 5000;
+const port = process.env.PORT || 5000;
 const { MongoClient, ServerApiVersion } = require("mongodb");
 
 app.get("/", (req, res) => {
   res.send("everything is okay!");
 });
-
+let allblood;
 const uri = process.env.MONGODB_URI;
 const client = new MongoClient(uri, {
   serverApi: {
@@ -24,23 +24,8 @@ const client = new MongoClient(uri, {
 async function run() {
   try {
     await client.connect();
-
     const db = client.db("bbb");
-    const allblood = db.collection("All-Blood");
-
-    // Post data
-    app.post("/all", async (req, res) => {
-      const info = req.body;
-      const result = await allblood.insertOne(info);
-      res.send(result);
-    });
-
-    // get data
-    app.get("/all", async (req, res) => {
-      const result = await allblood.find().toArray();
-      res.send(result);
-    });
-
+    allblood = db.collection("All-Blood");
     await client.db("admin").command({ ping: 1 });
     console.log(
       "Pinged your deployment. You successfully connected to MongoDB!",
@@ -50,7 +35,19 @@ async function run() {
   }
 }
 run().catch(console.dir);
+// Post data
+app.post("/all", async (req, res) => {
+  const info = req.body;
+  const result = await allblood.insertOne(info);
+  res.send(result);
+});
 
+// get data
+app.get("/all", async (req, res) => {
+  const result = await allblood.find().toArray();
+  res.send(result);
+});
 app.listen(port, () => {
   console.log(`Example app listening on port ${port}`);
 });
+module.exports = app;
