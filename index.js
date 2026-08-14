@@ -67,8 +67,7 @@ app.use(helmet()); // সাধারণ কিছু ক্ষতিকর head
 // সীমাবদ্ধ করা হলো, এবং credentials true করা হলো যাতে login cookie যেতে পারে
 app.use(
   cors({
-    origin:
-      process.env.FRONTEND_URL || "https://blood-bank-bangladesh-da.vercel.app",
+    origin: process.env.FRONTEND_URL || "https://bbb-da.vercel.app",
     credentials: true,
     methods: ["GET", "POST", "PUT", "DELETE"],
   }),
