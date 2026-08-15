@@ -20,6 +20,8 @@
  *    হয়েছে যাতে All-Blood আর Reviews — দুইটা collection ই একই cached
  *    connection ব্যবহার করতে পারে (আগের মতো MongoClient.connect() একাধিকবার
  *    কল হওয়া থেকে বাঁচানোর জন্য)
+ * ৬. ✅ NEW: GET /all/:id — একজন নির্দিষ্ট Donor-এর details page-এর জন্য
+ *    (shareable link যেন সরাসরি কাজ করে, শুধু list-এ না থেকে)
  *
  * ⚠️ package.json এ "type": "module" যোগ করতে হবে (Better Auth ESM লাগে)
  * ==============================================================
@@ -50,9 +52,9 @@ const client = new MongoClient(uri, {
 });
 
 // ============================================
-// ✅ NEW: একটাই cached connection promise, দুইটা collection
+// একটাই cached connection promise, দুইটা collection
 // (All-Blood ও Reviews) এখান থেকেই নেওয়া হবে — client.connect()
-// শুধু একবারই কল হবে, আগের behaviour একদম অপরিবর্তিত রইলো
+// শুধু একবারই কল হবে
 // ============================================
 let dbPromise;
 function connectDB() {
@@ -70,19 +72,18 @@ async function getCollection() {
   return db.collection("All-Blood");
 }
 
-// ✅ NEW: Reviews এর জন্য আলাদা collection
+// Reviews এর জন্য আলাদা collection
 async function getReviewsCollection() {
   const db = await connectDB();
   return db.collection("Reviews");
 }
 
 // ============================================
-// ✅ NEW: Security middleware গুলো
+// Security middleware গুলো
 // ============================================
 app.use(helmet()); // সাধারণ কিছু ক্ষতিকর header attack থেকে বাঁচায়
 
-// ✅ NEW: CORS আগে wildcard ছিল (app.use(cors())) — এখন নির্দিষ্ট origin এ
-// সীমাবদ্ধ করা হলো, এবং credentials true করা হলো যাতে login cookie যেতে পারে
+// CORS নির্দিষ্ট origin এ সীমাবদ্ধ, credentials true যাতে login cookie যেতে পারে
 app.use(
   cors({
     origin: process.env.FRONTEND_URL || "https://bbb-da.vercel.app",
@@ -92,7 +93,7 @@ app.use(
 );
 
 // ============================================
-// ✅ NEW: Better Auth এর handler
+// Better Auth এর handler
 // ⚠️ এটা অবশ্যই express.json() এর *আগে* বসাতে হবে,
 // নাহলে Better Auth এর ভেতরের request parsing আটকে যাবে (docs এ এই warning আছে)
 // ============================================
@@ -108,7 +109,7 @@ app.all("/api/auth/*splat", toNodeHandler(auth));
 app.use(express.json({ limit: "10mb" }));
 
 // ============================================
-// ✅ NEW: Rate limiter — বার বার চেষ্টা করে login/admin
+// Rate limiter — বার বার চেষ্টা করে login/admin
 // route এ আক্রমণ (brute-force) ঠেকানোর জন্য
 // ============================================
 const authLimiter = rateLimit({
@@ -126,7 +127,7 @@ const adminLimiter = rateLimit({
 });
 app.use("/admin", adminLimiter);
 
-// ✅ NEW: রিভিউ ফর্ম বার বার spam করে পাঠানো ঠেকানোর জন্য আলাদা limiter
+// রিভিউ ফর্ম বার বার spam করে পাঠানো ঠেকানোর জন্য আলাদা limiter
 const reviewLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: 10, // ১৫ মিনিটে সর্বোচ্চ ১০টা রিভিউ submit করা যাবে একই IP থেকে
@@ -136,13 +137,13 @@ const reviewLimiter = rateLimit({
 });
 
 // ============================================
-// public route গুলো (আগের মতোই)
+// public route গুলো
 // ============================================
 app.get("/", (req, res) => {
   res.send("everything is okay!");
 });
 
-// পাবলিক ফর্ম থেকে নতুন Donor submit করার route (আগের মতোই আছে)
+// পাবলিক ফর্ম থেকে নতুন Donor submit করার route
 app.post("/all", async (req, res) => {
   try {
     const allblood = await getCollection();
@@ -155,7 +156,7 @@ app.post("/all", async (req, res) => {
   }
 });
 
-// পাবলিক ভাবে সব Donor দেখার route (আগের মতোই আছে, ওয়েবসাইটের "All Blood" পেজের জন্য)
+// পাবলিক ভাবে সব Donor দেখার route (ওয়েবসাইটের "All Blood" পেজের জন্য)
 app.get("/all", async (req, res) => {
   try {
     const allblood = await getCollection();
@@ -167,8 +168,32 @@ app.get("/all", async (req, res) => {
   }
 });
 
+// ✅ NEW: একজন Donor এর details page এর জন্য — id দিয়ে single donor fetch
+// (পাবলিক route — শেয়ার করা লিংক যে কেউ খুলতে পারবে)
+app.get("/all/:id", async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    if (!ObjectId.isValid(id)) {
+      return res.status(400).json({ error: "সঠিক Donor ID না" });
+    }
+
+    const allblood = await getCollection();
+    const donor = await allblood.findOne({ _id: new ObjectId(id) });
+
+    if (!donor) {
+      return res.status(404).json({ error: "Donor খুঁজে পাওয়া যায়নি" });
+    }
+
+    res.json(donor);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // ================================================================
-// ✅ NEW: REVIEWS ROUTES — রিভিউ পেজের ডেটা MongoDB তে save/load
+// REVIEWS ROUTES — রিভিউ পেজের ডেটা MongoDB তে save/load
 // করার জন্য। এইগুলো পাবলিক route (যে কেউ রিভিউ দিতে ও দেখতে পারবে)
 // ================================================================
 
@@ -189,7 +214,7 @@ app.post("/api/reviews", reviewLimiter, async (req, res) => {
   try {
     const { name, address, review, rating } = req.body;
 
-    // ✅ বেসিক ভ্যালিডেশন — খালি বা ভুল ডেটা যেন ঢুকতে না পারে
+    // বেসিক ভ্যালিডেশন — খালি বা ভুল ডেটা যেন ঢুকতে না পারে
     if (
       !name ||
       !address ||
@@ -207,7 +232,7 @@ app.post("/api/reviews", reviewLimiter, async (req, res) => {
         ? ratingNum
         : 5;
 
-    // ✅ NEW: খুব বড় স্প্যাম টেক্সট ঠেকাতে length limit
+    // খুব বড় স্প্যাম টেক্সট ঠেকাতে length limit
     const newReview = {
       name: name.trim().slice(0, 100),
       address: address.trim().slice(0, 150),
@@ -226,7 +251,7 @@ app.post("/api/reviews", reviewLimiter, async (req, res) => {
     const reviews = await getReviewsCollection();
     const result = await reviews.insertOne(newReview);
 
-    // ✅ ফ্রন্টএন্ডে সাথে সাথে দেখানোর জন্য _id সহ পুরো object ফেরত পাঠানো হলো
+    // ফ্রন্টএন্ডে সাথে সাথে দেখানোর জন্য _id সহ পুরো object ফেরত পাঠানো হলো
     res.status(201).json({ _id: result.insertedId, ...newReview });
   } catch (err) {
     console.error(err);
@@ -235,7 +260,7 @@ app.post("/api/reviews", reviewLimiter, async (req, res) => {
 });
 
 // ================================================================
-// ✅ NEW: ADMIN ROUTES — নিচের সবগুলো route এ requireAdmin middleware
+// ADMIN ROUTES — নিচের সবগুলো route এ requireAdmin middleware
 // বসানো আছে, তাই লগইন করা admin ছাড়া কেউ এগুলো ব্যবহার করতে পারবে না
 // ================================================================
 
@@ -257,13 +282,13 @@ app.put("/admin/donors/:id", requireAdmin, async (req, res) => {
   try {
     const { id } = req.params;
 
-    // ✅ NEW: ObjectId ভ্যালিড কিনা চেক করা — ভুল id দিলে crash বা
+    // ObjectId ভ্যালিড কিনা চেক করা — ভুল id দিলে crash বা
     // injection চেষ্টা হলে সেটা এখানেই আটকে যাবে
     if (!ObjectId.isValid(id)) {
       return res.status(400).json({ error: "সঠিক Donor ID না" });
     }
 
-    // ✅ NEW: শুধু এই field গুলোই আপডেট করা যাবে (whitelist)
+    // শুধু এই field গুলোই আপডেট করা যাবে (whitelist)
     // req.body থেকে সরাসরি সব কিছু নিলে কেউ ইচ্ছে করে _id বা
     // অন্য sensitive field পাঠিয়ে বদলে দিতে পারত (mass assignment attack)
     const allowedFields = [
@@ -331,7 +356,7 @@ app.delete("/admin/donors/:id", requireAdmin, async (req, res) => {
   }
 });
 
-// ✅ NEW: Admin panel থেকে রিভিউ এডিট করার জন্য
+// Admin panel থেকে রিভিউ এডিট করার জন্য
 app.put("/admin/reviews/:id", requireAdmin, async (req, res) => {
   try {
     const { id } = req.params;
@@ -340,7 +365,7 @@ app.put("/admin/reviews/:id", requireAdmin, async (req, res) => {
       return res.status(400).json({ error: "সঠিক Review ID না" });
     }
 
-    // ✅ শুধু এই field গুলোই আপডেট করা যাবে (whitelist — mass assignment ঠেকাতে)
+    // শুধু এই field গুলোই আপডেট করা যাবে (whitelist — mass assignment ঠেকাতে)
     const allowedFields = ["name", "address", "review", "rating"];
     const updateData = {};
     for (const field of allowedFields) {
@@ -386,7 +411,7 @@ app.put("/admin/reviews/:id", requireAdmin, async (req, res) => {
   }
 });
 
-// ✅ NEW: Admin panel থেকে অনুপযুক্ত রিভিউ মুছে ফেলার জন্য
+// Admin panel থেকে অনুপযুক্ত রিভিউ মুছে ফেলার জন্য
 app.delete("/admin/reviews/:id", requireAdmin, async (req, res) => {
   try {
     const { id } = req.params;
@@ -410,7 +435,7 @@ app.delete("/admin/reviews/:id", requireAdmin, async (req, res) => {
 });
 
 // ============================================
-// ✅ NEW: Global error handler — কোনো route এ
+// Global error handler — কোনো route এ
 // অপ্রত্যাশিত error হলে এখানে ধরা পড়বে, পুরো
 // server crash হবে না
 // ============================================
