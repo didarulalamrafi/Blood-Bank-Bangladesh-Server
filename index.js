@@ -331,7 +331,62 @@ app.delete("/admin/donors/:id", requireAdmin, async (req, res) => {
   }
 });
 
-// ✅ NEW: Admin panel থেকে অনুপযুক্ত রিভিউ মুছে ফেলার জন্য (optional, protected)
+// ✅ NEW: Admin panel থেকে রিভিউ এডিট করার জন্য
+app.put("/admin/reviews/:id", requireAdmin, async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    if (!ObjectId.isValid(id)) {
+      return res.status(400).json({ error: "সঠিক Review ID না" });
+    }
+
+    // ✅ শুধু এই field গুলোই আপডেট করা যাবে (whitelist — mass assignment ঠেকাতে)
+    const allowedFields = ["name", "address", "review", "rating"];
+    const updateData = {};
+    for (const field of allowedFields) {
+      if (req.body[field] !== undefined) {
+        updateData[field] = req.body[field];
+      }
+    }
+
+    if (typeof updateData.name === "string") {
+      updateData.name = updateData.name.trim().slice(0, 100);
+    }
+    if (typeof updateData.address === "string") {
+      updateData.address = updateData.address.trim().slice(0, 150);
+    }
+    if (typeof updateData.review === "string") {
+      updateData.review = updateData.review.trim().slice(0, 1000);
+    }
+    if (updateData.rating !== undefined) {
+      const r = Number(updateData.rating);
+      updateData.rating = Number.isFinite(r) && r >= 1 && r <= 5 ? r : 5;
+    }
+
+    if (Object.keys(updateData).length === 0) {
+      return res
+        .status(400)
+        .json({ error: "আপডেট করার মতো কোনো তথ্য পাওয়া যায়নি" });
+    }
+
+    const reviews = await getReviewsCollection();
+    const result = await reviews.updateOne(
+      { _id: new ObjectId(id) },
+      { $set: updateData },
+    );
+
+    if (result.matchedCount === 0) {
+      return res.status(404).json({ error: "রিভিউ খুঁজে পাওয়া যায়নি" });
+    }
+
+    res.json({ success: true, message: "রিভিউ আপডেট হয়েছে", result });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ✅ NEW: Admin panel থেকে অনুপযুক্ত রিভিউ মুছে ফেলার জন্য
 app.delete("/admin/reviews/:id", requireAdmin, async (req, res) => {
   try {
     const { id } = req.params;
