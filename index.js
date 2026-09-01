@@ -14,14 +14,21 @@
  *    - MongoDB ObjectId validation (ভুল/ক্ষতিকর id দিয়ে crash বা injection ঠেকানো)
  *    - Update route এ শুধু নির্দিষ্ট field গুলোই বদলানো যাবে (Mass assignment ঠেকানো)
  *    - body size limit (বড় base64 ছবি ছাড়া বাকি সব ছোট রাখা)
- * ৪. ✅ NEW: Review পেজের জন্য GET/POST /api/reviews route — এখন থেকে
+ * ৪. Review পেজের জন্য GET/POST /api/reviews route — এখন থেকে
  *    রিভিউ localStorage এ না থেকে সরাসরি MongoDB তে সেভ হবে
  * ৫. connection caching লজিকটাকে একটু গুছিয়ে connectDB() নামে আলাদা করা
  *    হয়েছে যাতে All-Blood আর Reviews — দুইটা collection ই একই cached
  *    connection ব্যবহার করতে পারে (আগের মতো MongoClient.connect() একাধিকবার
  *    কল হওয়া থেকে বাঁচানোর জন্য)
- * ৬. ✅ NEW: GET /all/:id — একজন নির্দিষ্ট Donor-এর details page-এর জন্য
+ * ৬. GET /all/:id — একজন নির্দিষ্ট Donor-এর details page-এর জন্য
  *    (shareable link যেন সরাসরি কাজ করে, শুধু list-এ না থেকে)
+ * ৭. ✅ NEW: /all এবং /admin/donors route এ sort({ _id: -1 }) যোগ করা
+ *    হয়েছে — যাতে সর্বশেষ যোগ হওয়া Donor সবার আগে (সবার উপরে) দেখায়।
+ *    _id ব্যবহার করা হয়েছে কারণ MongoDB এর ObjectId এর ভেতরেই তৈরির
+ *    সময় (timestamp) এনকোড করা থাকে, তাই আলাদা createdAt field ছাড়াই
+ *    পুরোনো সব ডেটার সাথে এটা কাজ করবে।
+ * ৮. ✅ NEW: /all POST route এ createdAt field যোগ করা হয়েছে, ভবিষ্যতে
+ *    দরকার হলে (যেমন "কতদিন আগে যোগ হয়েছে" দেখানো) কাজে লাগবে।
  *
  * ⚠️ package.json এ "type": "module" যোগ করতে হবে (Better Auth ESM লাগে)
  * ==============================================================
@@ -147,7 +154,8 @@ app.get("/", (req, res) => {
 app.post("/all", async (req, res) => {
   try {
     const allblood = await getCollection();
-    const info = req.body;
+    // createdAt যোগ করা হলো — ভবিষ্যতে sort/analytics এর জন্য কাজে লাগবে
+    const info = { ...req.body, createdAt: new Date() };
     const result = await allblood.insertOne(info);
     res.send(result);
   } catch (err) {
@@ -157,10 +165,11 @@ app.post("/all", async (req, res) => {
 });
 
 // পাবলিক ভাবে সব Donor দেখার route (ওয়েবসাইটের "All Blood" পেজের জন্য)
+// sort({ _id: -1 }) দিয়ে সবচেয়ে সর্বশেষ যোগ হওয়া Donor সবার আগে দেখানো হচ্ছে
 app.get("/all", async (req, res) => {
   try {
     const allblood = await getCollection();
-    const result = await allblood.find().toArray();
+    const result = await allblood.find().sort({ _id: -1 }).toArray();
     res.send(result);
   } catch (err) {
     console.error(err);
@@ -168,7 +177,7 @@ app.get("/all", async (req, res) => {
   }
 });
 
-// ✅ NEW: একজন Donor এর details page এর জন্য — id দিয়ে single donor fetch
+// একজন Donor এর details page এর জন্য — id দিয়ে single donor fetch
 // (পাবলিক route — শেয়ার করা লিংক যে কেউ খুলতে পারবে)
 app.get("/all/:id", async (req, res) => {
   try {
@@ -266,10 +275,11 @@ app.post("/api/reviews", reviewLimiter, async (req, res) => {
 
 // সব Donor এর লিস্ট (admin dashboard এর জন্য — /all এর মতোই ডাটা,
 // কিন্তু এটা protected route হিসেবে রাখা হলো)
+// sort({ _id: -1 }) দিয়ে এখানেও সর্বশেষ যোগ হওয়া Donor সবার আগে দেখানো হচ্ছে
 app.get("/admin/donors", requireAdmin, async (req, res) => {
   try {
     const allblood = await getCollection();
-    const result = await allblood.find().toArray();
+    const result = await allblood.find().sort({ _id: -1 }).toArray();
     res.send(result);
   } catch (err) {
     console.error(err);

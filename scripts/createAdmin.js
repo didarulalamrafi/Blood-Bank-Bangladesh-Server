@@ -26,7 +26,7 @@ const [, , name, email, password] = process.argv;
 
 if (!name || !email || !password) {
   console.log(
-    "❌ ব্যবহারের নিয়ম: node scripts/createAdmin.js \"Name\" \"email@example.com\" \"Password123\""
+    '❌ ব্যবহারের নিয়ম: node scripts/createAdmin.js "Name" "email@example.com" "Password123"',
   );
   process.exit(1);
 }
@@ -53,10 +53,7 @@ async function main() {
   const db = client.db("bbb");
 
   // Better Auth ডিফল্ট ভাবে "user" নামের collection এ ইউজার রাখে
-  await db.collection("user").updateOne(
-    { email },
-    { $set: { role: "admin" } }
-  );
+  await db.collection("user").updateOne({ email }, { $set: { role: "admin" } });
 
   console.log("✅ Admin account সফলভাবে তৈরি হয়েছে!");
   console.log(`   Email: ${email}`);
@@ -70,3 +67,6 @@ main().catch((err) => {
   console.error("❌ সমস্যা হয়েছে:", err.message);
   process.exit(1);
 });
+
+// # Backend folder এ গিয়ে এই কমান্ড চালান:
+// node scripts/createAdmin.js "আপনার নাম" "admin@bloodbank.com" "StrongPassword123"
